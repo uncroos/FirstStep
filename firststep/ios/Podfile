@@ -11,9 +11,9 @@ project 'Runner', {
 }
 
 def flutter_root
-  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  generated_xcode_build_settings_path = File.expand_path(File.join('Flutter', 'Generated.xcconfig'), __dir__)
   unless File.exist?(generated_xcode_build_settings_path)
-    raise "#{use_frameworks} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
   end
 
   File.foreach(generated_xcode_build_settings_path) do |line|
@@ -28,7 +28,7 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  #use_frameworks! 이부분 수정했음.
+  use_frameworks! :linkage => :static
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
@@ -39,5 +39,12 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      # 1. 모든 타겟의 배포 버전을 13.0으로 통일
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      
+      # 2. Apple Silicon(M1/M2/M3) 맥 사용 시 시뮬레이터 오류 방지
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = ''
+    end
   end
 end

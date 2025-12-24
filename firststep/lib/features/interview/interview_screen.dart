@@ -3,13 +3,16 @@ import 'dart:typed_data';
 import 'dart:math';
 
 import 'package:camera/camera.dart';
+import 'package:firststep/widgets/camera_cover_preview.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:speech_to_text/speech_to_text.dart'; // ✅ STT 추가
 
 import '../../models/interview_result.dart';
 import '../../state/interview_result_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../services/face_analyzer.dart';
 
 class InterviewScreen extends ConsumerStatefulWidget {
   const InterviewScreen({super.key});
@@ -24,6 +27,12 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
   bool get wantKeepAlive => true;
 
   final _answerCtrl = TextEditingController();
+
+  // ✅ STT
+  final SpeechToText _stt = SpeechToText();
+  bool _sttReady = false;
+  bool _listening = false;
+  String _answerPrefix = '';
 
   // 질문
   final List<String> _questions = const [
@@ -43,8 +52,7 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
   bool _isBusy = false;
   int _frameCount = 0;
   int _frontCount = 0; // 정면 유지 프레임
-  double _smileSum = 0; // smilingProbability 합
-  int _smileCount = 0;
+  double _smileEma = 0;
   int _faceDetectedCount = 0;
 
   DateTime _lastProcess = DateTime.fromMillisecondsSinceEpoch(0);
@@ -61,6 +69,7 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
 
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
+        performanceMode: FaceDetectorMode.accurate,
         enableClassification: true, // smilingProbability
         enableTracking: false,
         enableLandmarks: false,
@@ -68,7 +77,71 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
       ),
     );
 
+    _initStt(); // ✅ STT 초기화
     _initCamera();
+  }
+
+  Future<void> _initStt() async {
+    try {
+      _sttReady = await _stt.initialize(
+        onError: (e) => debugPrint('STT error: $e'),
+        onStatus: (s) => debugPrint('STT status: $s'),
+      );
+      if (mounted) setState(() {});
+    } catch (e) {
+      _sttReady = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _startDictation() async {
+    if (!_sttReady) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('음성인식을 사용할 수 없어요. 권한/설정을 확인해줘.')),
+      );
+      return;
+    }
+    if (_listening) return;
+
+    // 기존 텍스트가 있으면 이어서 붙이기
+    _answerPrefix = _answerCtrl.text.trimRight();
+    if (_answerPrefix.isNotEmpty && !_answerPrefix.endsWith(' ')) {
+      _answerPrefix = '$_answerPrefix ';
+    }
+
+    _listening = true;
+
+    await _stt.listen(
+      localeId: 'ko_KR',
+      listenMode: ListenMode.dictation,
+      partialResults: true,
+      cancelOnError: false,
+      onResult: (result) {
+        final spoken = result.recognizedWords;
+
+        // “말한 내용 그대로” 답변란에 반영 (기존 글 + 현재 세션 인식 텍스트)
+        final combined = (_answerPrefix + spoken).trimLeft();
+
+        _answerCtrl.value = _answerCtrl.value.copyWith(
+          text: combined,
+          selection: TextSelection.collapsed(offset: combined.length),
+          composing: TextRange.empty,
+        );
+
+        // 필요하면 여기서 “말하는 중” UI 표시도 가능
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  Future<void> _stopDictation() async {
+    if (!_listening) return;
+    _listening = false;
+    try {
+      await _stt.stop();
+    } catch (_) {}
+    if (mounted) setState(() {});
   }
 
   Future<void> _initCamera() async {
@@ -83,7 +156,7 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
       final controller = CameraController(
         front,
         ResolutionPreset.medium,
-        enableAudio: false, // MVP: 영상 분석만(마이크는 다음)
+        enableAudio: false, // MVP: 영상 분석만(마이크는 STT로 별도)
         imageFormatGroup: ImageFormatGroup.bgra8888, // iOS 안정적
       );
 
@@ -92,19 +165,28 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
       if (!mounted) return;
       setState(() => _camera = controller);
     } catch (e) {
-      // 카메라 초기화 실패
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('카메라 초기화 실패: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('카메라 초기화 실패: $e')));
     }
   }
 
   @override
   void dispose() {
+    final cam = _camera;
+
+    // 화면 나갈 때 스트리밍 중이면 먼저 끊기(에러 무시)
+    if (cam != null && cam.value.isStreamingImages) {
+      cam.stopImageStream().catchError((_) {});
+    }
+
+    // ✅ STT 정리
+    _stt.stop();
+
     _answerCtrl.dispose();
-    _camera?.dispose();
     _faceDetector.close();
+    cam?.dispose();
     super.dispose();
   }
 
@@ -113,14 +195,16 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
     setState(() {
       _question = _questions[rnd.nextInt(_questions.length)];
       _answerCtrl.clear();
+      // 질문 바꾸면 “이어쓰기 prefix”도 리셋
+      _answerPrefix = '';
     });
   }
 
   void _resetMetrics() {
     _frameCount = 0;
     _frontCount = 0;
-    _smileSum = 0;
-    _smileCount = 0;
+    _smileEma = 0;
+    _smileAvg = 0;
     _faceDetectedCount = 0;
 
     _gazePercent = 0;
@@ -134,6 +218,9 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
     if (_isRunning) return;
 
     _resetMetrics();
+
+    // ✅ STT 먼저 켜기(버튼 누르면 바로 받아쓰기)
+    await _startDictation();
 
     setState(() => _isRunning = true);
 
@@ -163,6 +250,10 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
     if (cam == null) return;
 
     if (!_isRunning) return;
+
+    // ✅ STT 같이 끄기
+    await _stopDictation();
+
     setState(() => _isRunning = false);
 
     try {
@@ -172,7 +263,10 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
 
   Future<void> _processFrame(CameraImage image) async {
     // iOS(BGRA8888) 기준
-    final inputImage = _toInputImage(image, _camera!.description.sensorOrientation);
+    final inputImage = _toInputImage(
+      image,
+      _camera!.description.sensorOrientation,
+    );
     final faces = await _faceDetector.processImage(inputImage);
 
     _frameCount++;
@@ -182,18 +276,23 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
       final f = faces.first;
 
       // 정면 판단(헤드포즈) - 대략적인 시선 안정 지표
-      // Euler Y(좌우 회전), Z(기울기)
       final yaw = (f.headEulerAngleY ?? 999).abs();
       final roll = (f.headEulerAngleZ ?? 999).abs();
 
-      // 기준: 너무 빡세면 점수 안 나옴 → MVP라 널널하게
       final isFront = yaw < 12 && roll < 12;
       if (isFront) _frontCount++;
 
       final smile = f.smilingProbability;
       if (smile != null) {
-        _smileSum += smile;
-        _smileCount++;
+        final raw = (smile * 100).clamp(0.0, 100.0).toDouble();
+
+        final mapped = (((raw - 15.0) / (60.0 - 15.0)) * 100.0)
+            .clamp(0.0, 100.0)
+            .toDouble();
+
+        _smileEma = (_frameCount == 0)
+            ? mapped
+            : (_smileEma * 0.85 + mapped * 0.15);
       }
     }
 
@@ -201,31 +300,27 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
     if (_frameCount % 3 == 0 && mounted) {
       setState(() {
         _gazePercent = _frameCount == 0 ? 0 : (_frontCount / _frameCount) * 100;
-        _faceDetectedPercent =
-            _frameCount == 0 ? 0 : (_faceDetectedCount / _frameCount) * 100;
-        _smileAvg = _smileCount == 0 ? 0 : (_smileSum / _smileCount) * 100;
+        _faceDetectedPercent = _frameCount == 0
+            ? 0
+            : (_faceDetectedCount / _frameCount) * 100;
+        _smileAvg = _smileEma;
       });
     }
   }
 
   // CameraImage -> InputImage (iOS 안정 루트)
   InputImage _toInputImage(CameraImage image, int rotation) {
-    final bytes = _concatenatePlanes(image.planes);
+    final plane = image.planes.first;
+    final bytes = plane.bytes;
 
     final inputImageData = InputImageMetadata(
       size: Size(image.width.toDouble(), image.height.toDouble()),
       rotation: _rotationFromSensor(rotation),
       format: InputImageFormat.bgra8888,
-      bytesPerRow: image.planes.first.bytesPerRow,
+      bytesPerRow: plane.bytesPerRow,
     );
 
     return InputImage.fromBytes(bytes: bytes, metadata: inputImageData);
-  }
-
-  Uint8List _concatenatePlanes(List<Plane> planes) {
-    return Uint8List.fromList(
-      planes.expand((plane) => plane.bytes).toList(),
-    );
   }
 
   InputImageRotation _rotationFromSensor(int rotation) {
@@ -255,18 +350,23 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
 
     // 내용(40)
     int contentScore;
-    if (length >= 220) contentScore = 40;
-    else if (length >= 140) contentScore = 34;
-    else if (length >= 80) contentScore = 28;
-    else if (length >= 30) contentScore = 22;
-    else contentScore = 14;
+    if (length >= 220)
+      contentScore = 40;
+    else if (length >= 140)
+      contentScore = 34;
+    else if (length >= 80)
+      contentScore = 28;
+    else if (length >= 30)
+      contentScore = 22;
+    else
+      contentScore = 14;
 
     // 시각(30): 정면 70%, 미소 30%
     final gazeScore = (_gazePercent.clamp(0, 100) * 0.7);
     final smileScore = (_smileAvg.clamp(0, 100) * 0.3);
     final visualScore = ((gazeScore + smileScore) / 100.0 * 30).round();
 
-    // 음성/말버릇(30): 추임새 감점
+    // 음성/말버릇(30): 추임새 감점 (현재는 텍스트 기반)
     final penalty = min(20, fillers * 4);
     final voiceScore = max(0, 30 - penalty);
 
@@ -298,13 +398,13 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
   Future<void> _submit() async {
     final answer = _answerCtrl.text.trim();
     if (answer.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('답변을 입력해줘.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('답변을 입력해줘.')));
       return;
     }
 
-    // 분석 중이면 멈추고 제출
+    // ✅ 분석 중이면 멈추고 제출 (STT도 같이 꺼짐)
     await _stop();
 
     final result = _evaluateMvp(answer);
@@ -324,6 +424,7 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
         onRetry: () {
           Navigator.pop(context);
           _answerCtrl.clear();
+          _answerPrefix = '';
           _resetMetrics();
         },
       ),
@@ -344,15 +445,15 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
           children: [
             Text(
               '면접 연습',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    color: AppColors.navy,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.displaySmall?.copyWith(color: AppColors.navy),
             ),
             const SizedBox(height: 12),
 
             // 카메라 프리뷰
             Container(
-              height: 220,
+              height: 250,
               width: double.infinity,
               decoration: BoxDecoration(
                 color: AppColors.lightGray,
@@ -360,11 +461,9 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
               ),
               child: cam == null || !cam.value.isInitialized
                   ? const Center(child: Text('카메라 준비중...'))
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: CameraPreview(cam),
-                    ),
+                  : CameraCoverPreview(controller: cam, radius: 16),
             ),
+
             const SizedBox(height: 10),
 
             // 시작/중지
@@ -380,10 +479,13 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: (cam == null || !cam.value.isInitialized || _isRunning)
+                      onPressed:
+                          (cam == null ||
+                              !cam.value.isInitialized ||
+                              _isRunning)
                           ? null
                           : _start,
-                      child: const Text('시작'),
+                      child: Text(_sttReady ? '시작' : '시작(마이크 준비중)'),
                     ),
                   ),
                 ),
@@ -400,7 +502,7 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
                         ),
                       ),
                       onPressed: _isRunning ? _stop : null,
-                      child: const Text('중지'),
+                      child: Text(_listening ? '중지(듣는중)' : '중지'),
                     ),
                   ),
                 ),
@@ -408,7 +510,7 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
             ),
             const SizedBox(height: 12),
 
-            // 실시간 지표(발표 때 먹힘)
+            // 실시간 지표
             _MetricRow(
               gaze: _gazePercent,
               smile: _smileAvg,
@@ -425,7 +527,10 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
                 children: [
                   Row(
                     children: [
-                      const Text('Q.', style: TextStyle(fontWeight: FontWeight.w800)),
+                      const Text(
+                        'Q.',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -445,7 +550,9 @@ class _InterviewScreenState extends ConsumerState<InterviewScreen>
                     controller: _answerCtrl,
                     maxLines: 6,
                     decoration: InputDecoration(
-                      hintText: '답변을 입력해주세요. (MVP: 텍스트 기반)',
+                      hintText: _isRunning
+                          ? '말하면 자동으로 입력돼요.'
+                          : '답변을 입력해주세요. (시작 누르면 음성으로도 입력됨)',
                       filled: true,
                       fillColor: AppColors.lightGray,
                       border: OutlineInputBorder(
@@ -507,7 +614,10 @@ class _MetricRow extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
             const SizedBox(height: 2),
             Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
           ],
@@ -521,7 +631,9 @@ class _MetricRow extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(child: chip('표정(미소)', '${smile.toStringAsFixed(0)}%')),
         const SizedBox(width: 8),
-        Expanded(child: chip('얼굴감지', running ? '${face.toStringAsFixed(0)}%' : '-')),
+        Expanded(
+          child: chip('얼굴감지', running ? '${face.toStringAsFixed(0)}%' : '-'),
+        ),
       ],
     );
   }
@@ -548,7 +660,10 @@ class _ResultSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$score점', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+          Text(
+            '$score점',
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 10),
           Text(feedback),
           const SizedBox(height: 12),
@@ -571,7 +686,9 @@ class _ResultSheet extends StatelessWidget {
             child: FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.navy,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onPressed: onRetry,
               child: const Text('다시 연습하기'),

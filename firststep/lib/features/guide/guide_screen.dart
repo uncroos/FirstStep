@@ -20,23 +20,20 @@ class _GuideScreenState extends ConsumerState<GuideScreen>
   String _query = '';
   String _selectedCategory = '전체';
 
-  final List<String> _categories = const [
-    '전체',
-    '이력서',
-    '자기소개서',
-    '면접',
-    '첫출근',
-  ];
+  final List<String> _categories = const ['전체', '이력서', '자기소개서', '면접', '첫출근'];
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
     final guides = ref.watch(guidesProvider);
+    final categories = [
+      '전체',
+      ...{for (final g in guides) g.category}.toList(),
+    ];
 
     final filtered = guides.where((g) {
-      final matchQuery =
-          g.title.toLowerCase().contains(_query.toLowerCase());
+      final matchQuery = g.title.toLowerCase().contains(_query.toLowerCase());
       final matchCategory =
           _selectedCategory == '전체' || g.category == _selectedCategory;
       return matchQuery && matchCategory;
@@ -51,9 +48,9 @@ class _GuideScreenState extends ConsumerState<GuideScreen>
             padding: const EdgeInsets.all(16),
             child: Text(
               'Guide',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    color: AppColors.navy,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.displaySmall?.copyWith(color: AppColors.navy),
             ),
           ),
 
@@ -89,8 +86,10 @@ class _GuideScreenState extends ConsumerState<GuideScreen>
                 return GestureDetector(
                   onTap: () => setState(() => _selectedCategory = c),
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: selected ? AppColors.navy : AppColors.lightGray,
                       borderRadius: BorderRadius.circular(999),
@@ -182,10 +181,7 @@ class _GuideCard extends StatelessWidget {
                 children: [
                   Text(
                     category,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.black54,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                   const SizedBox(height: 4),
                   Text(

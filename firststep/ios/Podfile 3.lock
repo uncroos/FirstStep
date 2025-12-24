@@ -62,10 +62,6 @@ PODS:
   - shared_preferences_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
-  - speech_to_text (0.0.1):
-    - Flutter
-    - Try
-  - Try (2.1.1)
 
 DEPENDENCIES:
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
@@ -73,7 +69,6 @@ DEPENDENCIES:
   - google_mlkit_commons (from `.symlinks/plugins/google_mlkit_commons/ios`)
   - google_mlkit_face_detection (from `.symlinks/plugins/google_mlkit_face_detection/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
-  - speech_to_text (from `.symlinks/plugins/speech_to_text/ios`)
 
 SPEC REPOS:
   trunk:
@@ -89,7 +84,6 @@ SPEC REPOS:
     - MLKitVision
     - nanopb
     - PromisesObjC
-    - Try
 
 EXTERNAL SOURCES:
   camera_avfoundation:
@@ -102,8 +96,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/google_mlkit_face_detection/ios"
   shared_preferences_foundation:
     :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
-  speech_to_text:
-    :path: ".symlinks/plugins/speech_to_text/ios"
 
 SPEC CHECKSUMS:
   camera_avfoundation: 5675ca25298b6f81fa0a325188e7df62cc217741
@@ -123,9 +115,7 @@ SPEC CHECKSUMS:
   nanopb: 438bc412db1928dac798aa6fd75726007be04262
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
-  speech_to_text: ae2abc312e619ff1c53e675a9fc4d785a15c03bb
-  Try: 5ef669ae832617b3cee58cb2c6f99fb767a4ff96
 
-PODFILE CHECKSUM: b6592b2267e70868e331ef04f3bb08848efaa769
+PODFILE CHECKSUM: 0bebbfd0bda1cd00d8dfa5edbbe9e0ead97180e2
 
 COCOAPODS: 1.16.2

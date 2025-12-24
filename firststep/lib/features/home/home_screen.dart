@@ -46,7 +46,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       builder: (ctx) {
         final bottom = MediaQuery.of(ctx).viewInsets.bottom;
         return Padding(
-          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: bottom + 16),
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: bottom + 16,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,7 +82,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         value: category,
                         items: const [
                           DropdownMenuItem(value: '이력서', child: Text('이력서')),
-                          DropdownMenuItem(value: '자기소개서', child: Text('자기소개서')),
+                          DropdownMenuItem(
+                            value: '자기소개서',
+                            child: Text('자기소개서'),
+                          ),
                           DropdownMenuItem(value: '면접', child: Text('면접')),
                           DropdownMenuItem(value: '첫출근', child: Text('첫출근')),
                         ],
@@ -97,7 +105,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.navy,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onPressed: () {
                     final title = titleController.text.trim();
@@ -105,10 +115,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       Navigator.pop(ctx);
                       return;
                     }
-                    ref.read(tasksProvider.notifier).addTask(
-                          title: title,
-                          category: category,
-                        );
+                    ref
+                        .read(tasksProvider.notifier)
+                        .addTask(title: title, category: category);
                     Navigator.pop(ctx);
                   },
                   child: const Text('추가하기'),
@@ -145,11 +154,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           children: [
             Text(
               'FirstStep',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                color: AppColors.navy,
-                ),
-              ),
-            
+              style: Theme.of(
+                context,
+              ).textTheme.displaySmall?.copyWith(color: AppColors.navy),
+            ),
+
             const SizedBox(height: 12),
 
             // ToDo 카드
@@ -157,7 +166,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('ToDo List', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text(
+                    'ToDo List',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 10),
 
                   if (tasks.isEmpty)
@@ -170,7 +182,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           children: [
                             Checkbox(
                               value: t.isDone,
-                              onChanged: (_) => ref.read(tasksProvider.notifier).toggleDone(t.id),
+                              onChanged: (_) => ref
+                                  .read(tasksProvider.notifier)
+                                  .toggleDone(t.id),
                               activeColor: AppColors.navy,
                             ),
                             Expanded(child: Text(t.title)),
@@ -190,7 +204,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.navy,
                         side: const BorderSide(color: AppColors.navy),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -221,7 +237,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('최근 본 가이드', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text(
+                    '최근 본 가이드',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 10),
                   if (recentGuides.isEmpty)
                     const _EmptyLine(text: '가이드를 열어보면 여기에 최근 2개가 뜹니다.')
@@ -250,7 +269,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: FilledButton(
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.navy,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 onPressed: () {
                   // 다음 단계에서 Interview 탭 상세 로직 연결
@@ -271,7 +292,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ref.read(recentGuidesProvider.notifier).viewed('g1');
                 ref.read(recentGuidesProvider.notifier).viewed('g2');
               },
-              child: const Text('(개발용) 최근 가이드 샘플 넣기'),
+              child: const Text(''),
             ),
           ],
         ),
@@ -317,10 +338,7 @@ class _EmptyLine extends StatelessWidget {
         color: AppColors.lightGray,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        text,
-        style: const TextStyle(color: Colors.black54),
-      ),
+      child: Text(text, style: const TextStyle(color: Colors.black54)),
     );
   }
 }
